@@ -9,7 +9,6 @@ interface Shortcut {
 const shortcuts: Shortcut[] = [
   { key: '/', description: 'Focus provider search', action: 'search' },
   { key: 'f', description: 'Fill PDF', action: 'fill' },
-  { key: 'b', description: 'Batch fill', action: 'batch' },
   { key: 'd', description: 'Toggle dark mode', action: 'darkmode' },
   { key: '?', description: 'Show shortcuts', action: 'help' },
   { key: 'Esc', description: 'Close modal', action: 'close' },
@@ -41,9 +40,6 @@ export const useKeyboardShortcuts = (
       } else if (e.key === 'f' && isMod) {
         e.preventDefault();
         onAction('fill');
-      } else if (e.key === 'b' && isMod) {
-        e.preventDefault();
-        onAction('batch');
       } else if (e.key === 'd' && isMod) {
         e.preventDefault();
         onAction('darkmode');
