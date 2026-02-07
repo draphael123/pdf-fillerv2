@@ -13,10 +13,9 @@ export const FieldMapper: React.FC<FieldMapperProps> = ({
   onMappingsChange,
 }) => {
   const [customMappings, setCustomMappings] = useState<Record<string, string>>({});
-  const [showAllFields, setShowAllFields] = useState(false);
+  const [showLowConfidence, setShowLowConfidence] = useState(false);
 
   useEffect(() => {
-    // Initialize custom mappings with auto-detected mappings
     const initial: Record<string, string> = {};
     mappings.forEach(mapping => {
       initial[mapping.pdfField] = mapping.providerField;
@@ -30,126 +29,97 @@ export const FieldMapper: React.FC<FieldMapperProps> = ({
     onMappingsChange(updated);
   };
 
-  const getConfidenceColor = (confidence: number): string => {
-    if (confidence >= 0.8) return 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-400';
-    if (confidence >= 0.5) return 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-400';
-    return 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-400';
-  };
+  const highConfidence = mappings.filter(m => m.confidence >= 0.5);
+  const lowConfidence = mappings.filter(m => m.confidence < 0.5);
+  
+  const displayedMappings = showLowConfidence ? mappings : highConfidence;
+  const providerFieldOptions = Object.keys(provider.data).filter(k => provider.data[k]).sort();
 
-  const getConfidenceLabel = (confidence: number): string => {
-    if (confidence >= 0.8) return 'High';
-    if (confidence >= 0.5) return 'Medium';
-    return 'Low';
-  };
-
-  const displayedMappings = showAllFields
-    ? mappings
-    : mappings.filter(m => m.confidence >= 0.5);
-
-  const providerFieldOptions = Object.keys(provider.data).sort();
+  if (displayedMappings.length === 0) {
+    return (
+      <div className="text-center py-8 text-[#6b7280] dark:text-[#8b8b9b]">
+        No field mappings detected
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-          Field Mappings ({displayedMappings.length})
-        </h3>
-        <label className="flex items-center text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={showAllFields}
-            onChange={(e) => setShowAllFields(e.target.checked)}
-            className="mr-2 rounded"
-          />
-          Show all fields
-        </label>
-      </div>
-
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-        Review the auto-detected field mappings below. High-confidence mappings are more likely to be correct.
-      </p>
-
-      {displayedMappings.length === 0 ? (
-        <div className="text-center py-8 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-slate-600 rounded-lg">
-          No field mappings detected. The PDF may not have fillable form fields.
-        </div>
-      ) : (
-        <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-          {displayedMappings.map((mapping, index) => (
-            <div
-              key={index}
-              className="border border-gray-200 dark:border-slate-700 rounded-lg p-4 bg-white dark:bg-slate-800 hover:shadow-sm transition-shadow"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <div className="font-medium text-gray-900 dark:text-white text-sm">
-                    {mapping.pdfField}
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">PDF Field Name</div>
-                </div>
-                <span
-                  className={`px-2 py-1 text-xs font-medium rounded ${getConfidenceColor(
-                    mapping.confidence
-                  )}`}
-                >
-                  {getConfidenceLabel(mapping.confidence)} ({Math.round(mapping.confidence * 100)}%)
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3">
-                {/* Provider Field Selector */}
-                <div>
-                  <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">
-                    Maps to Provider Field:
-                  </label>
-                  <select
-                    value={customMappings[mapping.pdfField] || mapping.providerField}
-                    onChange={(e) => handleMappingChange(mapping.pdfField, e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">-- Select Field --</option>
-                    {providerFieldOptions.map((field) => (
-                      <option key={field} value={field}>
-                        {field}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Value Preview */}
-                {customMappings[mapping.pdfField] && (
-                  <div className="bg-gray-50 dark:bg-slate-900 rounded-md p-2 border border-gray-200 dark:border-slate-700">
-                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Value to be filled:</div>
-                    <div className="text-sm text-gray-900 dark:text-white font-mono">
-                      {provider.data[customMappings[mapping.pdfField]] || '(empty)'}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+    <div>
+      {/* Toggle for low confidence fields */}
+      {lowConfidence.length > 0 && (
+        <div className="flex items-center justify-between mb-4 pb-4 border-b border-[#e5e2dd] dark:border-[#2a2a38]">
+          <span className="text-sm text-[#6b7280] dark:text-[#8b8b9b]">
+            {highConfidence.length} matched · {lowConfidence.length} unmatched
+          </span>
+          <label className="flex items-center gap-2 text-sm text-[#6b7280] dark:text-[#8b8b9b] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showLowConfidence}
+              onChange={(e) => setShowLowConfidence(e.target.checked)}
+              className="rounded border-[#e5e2dd] dark:border-[#2a2a38]"
+            />
+            Show unmatched
+          </label>
         </div>
       )}
 
-      <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-        <div className="flex items-start">
-          <svg
-            className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 mr-2 flex-shrink-0"
-            fill="currentColor"
-            viewBox="0 0 20 20"
+      {/* Mappings list */}
+      <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
+        {displayedMappings.map((mapping, index) => (
+          <div
+            key={index}
+            className={`flex items-center gap-4 p-3 rounded-lg ${
+              mapping.confidence >= 0.5 
+                ? 'bg-[#f0eeeb] dark:bg-[#1a1a24]' 
+                : 'bg-[#fef8f6] dark:bg-[#1e1a18]'
+            }`}
           >
-            <path
-              fillRule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-              clipRule="evenodd"
-            />
-          </svg>
-          <div className="text-sm text-blue-800 dark:text-blue-400">
-            <strong>Tip:</strong> You can customize any mapping by selecting a different provider field
-            from the dropdown. The confidence score helps identify which mappings might need review.
+            {/* PDF Field */}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-mono text-[#1a1a2e] dark:text-[#e8e6e3] truncate">
+                {mapping.pdfField}
+              </p>
+            </div>
+
+            {/* Arrow */}
+            <svg className="w-4 h-4 text-[#9a9590] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+
+            {/* Provider Field Dropdown */}
+            <div className="flex-1">
+              <select
+                value={customMappings[mapping.pdfField] || ''}
+                onChange={(e) => handleMappingChange(mapping.pdfField, e.target.value)}
+                className="w-full px-3 py-1.5 text-sm bg-white dark:bg-[#1e1e28] border border-[#e5e2dd] dark:border-[#2a2a38] rounded-md text-[#1a1a2e] dark:text-[#e8e6e3] focus:outline-none focus:ring-1 focus:ring-[#c45d3a]"
+              >
+                <option value="">Skip this field</option>
+                {providerFieldOptions.map((field) => (
+                  <option key={field} value={field}>
+                    {field}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Confidence indicator */}
+            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+              mapping.confidence >= 0.8 ? 'bg-[#2d7a5f]' :
+              mapping.confidence >= 0.5 ? 'bg-[#b8860b]' :
+              'bg-[#9a9590]'
+            }`} title={`${Math.round(mapping.confidence * 100)}% confidence`} />
           </div>
-        </div>
+        ))}
       </div>
+
+      {/* Preview of selected value */}
+      {Object.values(customMappings).some(v => v) && (
+        <div className="mt-4 p-3 bg-[#e8f5f0] dark:bg-[#1a2f28] border border-[#c8e5d8] dark:border-[#2a4038] rounded-lg">
+          <p className="text-xs text-[#2d7a5f] dark:text-[#6dba9f]">
+            ✓ {Object.values(customMappings).filter(v => v).length} fields will be filled
+          </p>
+        </div>
+      )}
     </div>
   );
 };

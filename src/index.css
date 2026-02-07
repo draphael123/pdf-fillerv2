@@ -2,36 +2,158 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Warm, sophisticated color palette */
+  --color-ink: #1a1a2e;
+  --color-ink-light: #2d2d44;
+  --color-paper: #faf9f7;
+  --color-paper-dark: #f0eeeb;
+  --color-accent: #c45d3a;
+  --color-accent-hover: #a84d2f;
+  --color-success: #2d7a5f;
+  --color-success-light: #e8f5f0;
+  --color-warning: #b8860b;
+  --color-warning-light: #fef8e7;
+  --color-muted: #6b7280;
+  --color-border: #e5e2dd;
+  
+  /* Dark mode colors */
+  --color-ink-dark: #e8e6e3;
+  --color-paper-night: #16161d;
+  --color-paper-night-light: #1e1e28;
+  --color-border-night: #2a2a38;
+}
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  line-height: 1.6;
+  letter-spacing: -0.01em;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+.dark body {
+  background-color: var(--color-paper-night);
+  color: var(--color-ink-dark);
 }
 
-/* Custom scrollbar */
+code, .font-mono {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 0.9em;
+}
+
+/* Custom scrollbar - more subtle */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 4px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
+  background: #c4c0b8;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: #9a9590;
 }
 
+.dark ::-webkit-scrollbar-thumb {
+  background: #3a3a48;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #4a4a5a;
+}
+
+/* Subtle texture overlay for depth */
+.texture-overlay {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.02;
+  pointer-events: none;
+}
+
+/* Animation for fade in */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Smooth transitions */
+* {
+  transition-property: background-color, border-color, box-shadow;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
+/* Focus styles */
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Selection color */
+::selection {
+  background-color: rgba(196, 93, 58, 0.2);
+}
+
+.dark ::selection {
+  background-color: rgba(196, 93, 58, 0.3);
+}
+
+/* Card hover effect */
+.card-hover {
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -8px rgba(26, 26, 46, 0.12);
+}
+
+.dark .card-hover:hover {
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.4);
+}
+
+/* Button base styles */
+.btn-primary {
+  background-color: var(--color-accent);
+  color: white;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: all 150ms ease;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-accent-hover);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+/* Input styles */
+input, select, textarea {
+  font-family: inherit;
+}
+
+/* Subtle divider */
+.divider {
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--color-border), transparent);
+}
+
+.dark .divider {
+  background: linear-gradient(to right, transparent, var(--color-border-night), transparent);
+}
