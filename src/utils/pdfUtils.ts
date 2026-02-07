@@ -9,6 +9,16 @@ export interface PDFAnalysisResult {
   errorMessage?: string;
 }
 
+export interface FillResult {
+  pdfBytes: Uint8Array;
+  filledFields: { fieldName: string; providerField: string; value: string }[];
+  skippedFields: { fieldName: string; reason: string }[];
+  totalFields: number;
+}
+
+// Minimum confidence score required to auto-map a field
+const MIN_CONFIDENCE_THRESHOLD = 0.5;
+
 /**
  * Comprehensive XFA detection
  */
@@ -247,7 +257,40 @@ const COMMON_MAPPINGS: Record<string, string[]> = {
 };
 
 /**
+ * Fields that should NOT be auto-mapped (organization/clinic specific fields)
+ * These are typically not in the Provider Compliance Dashboard
+ */
+const EXCLUDED_FIELD_PATTERNS = [
+  'organization',
+  'clinic',
+  'facility',
+  'hospital',
+  'practice',
+  'group',
+  'company',
+  'employer',
+  'business',
+  'entity',
+  'firm',
+  'agency',
+  'institution',
+  'corp',
+  'llc',
+  'inc',
+  'pllc',
+];
+
+/**
+ * Check if a PDF field name should be excluded from auto-mapping
+ */
+function shouldExcludeField(fieldName: string): boolean {
+  const lowerName = fieldName.toLowerCase();
+  return EXCLUDED_FIELD_PATTERNS.some(pattern => lowerName.includes(pattern));
+}
+
+/**
  * Smart field mapping between PDF fields and provider data
+ * Only maps fields that have a reasonable match in the provider data
  */
 export function generateFieldMappings(
   pdfFields: PDFField[],
@@ -260,33 +303,46 @@ export function generateFieldMappings(
     let bestMatch = '';
     let bestScore = 0;
     
-    // Try to find the best matching provider field
-    for (const providerField of providerFields) {
-      let score = calculateSimilarity(pdfField.name, providerField);
-      
-      // Boost score for common mappings
-      for (const [key, aliases] of Object.entries(COMMON_MAPPINGS)) {
-        const pdfLower = pdfField.name.toLowerCase();
-        const providerLower = providerField.toLowerCase();
-        
-        if ((aliases.some(alias => pdfLower.includes(alias)) || pdfLower.includes(key)) && 
-            (providerLower.includes(key) || aliases.some(alias => providerLower.includes(alias)))) {
-          score = Math.max(score, 0.85);
+    // Check if this field should be excluded
+    const isExcluded = shouldExcludeField(pdfField.name);
+    
+    if (!isExcluded) {
+      // Try to find the best matching provider field
+      for (const providerField of providerFields) {
+        // Skip provider fields that have no data
+        if (!providerData.data[providerField] || providerData.data[providerField].trim() === '') {
+          continue;
         }
-      }
-      
-      if (score > bestScore) {
-        bestScore = score;
-        bestMatch = providerField;
+        
+        let score = calculateSimilarity(pdfField.name, providerField);
+        
+        // Boost score for common mappings
+        for (const [key, aliases] of Object.entries(COMMON_MAPPINGS)) {
+          const pdfLower = pdfField.name.toLowerCase();
+          const providerLower = providerField.toLowerCase();
+          
+          if ((aliases.some(alias => pdfLower.includes(alias)) || pdfLower.includes(key)) && 
+              (providerLower.includes(key) || aliases.some(alias => providerLower.includes(alias)))) {
+            score = Math.max(score, 0.85);
+          }
+        }
+        
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = providerField;
+        }
       }
     }
     
-    // Include all fields, even with low confidence, so user can manually map
+    // Only include mapping if confidence is above threshold
+    // Fields below threshold will still be shown but without a suggested mapping
     mappings.push({
       pdfField: pdfField.name,
-      providerField: bestMatch,
+      providerField: bestScore >= MIN_CONFIDENCE_THRESHOLD ? bestMatch : '',
       confidence: bestScore,
-      suggestedValue: bestMatch ? (providerData.data[bestMatch] || '') : ''
+      suggestedValue: (bestScore >= MIN_CONFIDENCE_THRESHOLD && bestMatch) 
+        ? (providerData.data[bestMatch] || '') 
+        : ''
     });
   }
   
@@ -295,70 +351,138 @@ export function generateFieldMappings(
 
 /**
  * Fill PDF with provider data based on mappings
+ * Returns detailed information about what was filled and what was skipped
  */
 export async function fillPDF(
   pdfFile: File,
   provider: ProviderData,
   customMappings: Record<string, string> = {}
-): Promise<Uint8Array> {
+): Promise<FillResult> {
   const arrayBuffer = await pdfFile.arrayBuffer();
   const pdfDoc = await PDFDocument.load(arrayBuffer, {
     ignoreEncryption: true,
   });
   const form = pdfDoc.getForm();
   
+  // Get all form fields
+  const allFields = form.getFields();
+  const totalFields = allFields.length;
+  
   // Get auto-generated mappings
   const pdfFields = await extractPDFFields(pdfFile);
   const autoMappings = generateFieldMappings(pdfFields, provider);
   
   // Create combined mapping (custom mappings override auto mappings)
+  // Only include mappings that meet the confidence threshold or are custom
   const mappingDict: Record<string, string> = {};
   
-  // First add auto mappings
+  // First add auto mappings that meet the threshold
   for (const mapping of autoMappings) {
-    if (mapping.providerField) {
+    if (mapping.providerField && mapping.confidence >= MIN_CONFIDENCE_THRESHOLD) {
       mappingDict[mapping.pdfField] = mapping.providerField;
     }
   }
   
-  // Override with custom mappings
-  Object.assign(mappingDict, customMappings);
+  // Override with custom mappings (these are user-selected, so always include)
+  for (const [pdfField, providerField] of Object.entries(customMappings)) {
+    if (providerField && providerField.trim() !== '') {
+      mappingDict[pdfField] = providerField;
+    }
+  }
   
-  // Fill the form
-  let filledCount = 0;
-  for (const [pdfFieldName, providerFieldName] of Object.entries(mappingDict)) {
+  // Track filled and skipped fields
+  const filledFields: { fieldName: string; providerField: string; value: string }[] = [];
+  const skippedFields: { fieldName: string; reason: string }[] = [];
+  
+  // Process each PDF field
+  for (const pdfField of pdfFields) {
+    const pdfFieldName = pdfField.name;
+    const providerFieldName = mappingDict[pdfFieldName];
+    
+    // Check if field was mapped
+    if (!providerFieldName) {
+      // Determine skip reason
+      const isExcluded = shouldExcludeField(pdfFieldName);
+      const mapping = autoMappings.find(m => m.pdfField === pdfFieldName);
+      
+      if (isExcluded) {
+        skippedFields.push({
+          fieldName: pdfFieldName,
+          reason: 'Organization/facility field - not in provider data'
+        });
+      } else if (mapping && mapping.confidence > 0 && mapping.confidence < MIN_CONFIDENCE_THRESHOLD) {
+        skippedFields.push({
+          fieldName: pdfFieldName,
+          reason: `Low confidence match (${Math.round(mapping.confidence * 100)}%)`
+        });
+      } else {
+        skippedFields.push({
+          fieldName: pdfFieldName,
+          reason: 'No matching field in provider data'
+        });
+      }
+      continue;
+    }
+    
+    // Get the value from provider data
+    const value = provider.data[providerFieldName];
+    
+    if (!value || value.trim() === '') {
+      skippedFields.push({
+        fieldName: pdfFieldName,
+        reason: `Provider has no data for "${providerFieldName}"`
+      });
+      continue;
+    }
+    
+    // Try to fill the field
     try {
       const field = form.getField(pdfFieldName);
-      const value = provider.data[providerFieldName];
-      
-      if (!value) continue;
       
       if (field instanceof PDFTextField) {
         field.setText(value);
-        filledCount++;
+        filledFields.push({ fieldName: pdfFieldName, providerField: providerFieldName, value });
       } else if (field instanceof PDFCheckBox) {
-        if (value.toLowerCase() === 'yes' || value.toLowerCase() === 'true' || value === '1') {
+        const shouldCheck = ['yes', 'true', '1', 'checked', 'x'].includes(value.toLowerCase());
+        if (shouldCheck) {
           field.check();
         } else {
           field.uncheck();
         }
-        filledCount++;
+        filledFields.push({ fieldName: pdfFieldName, providerField: providerFieldName, value: shouldCheck ? 'Checked' : 'Unchecked' });
       } else if (field instanceof PDFDropdown) {
         try {
           field.select(value);
-          filledCount++;
+          filledFields.push({ fieldName: pdfFieldName, providerField: providerFieldName, value });
         } catch {
-          // If value not in options, skip
+          skippedFields.push({
+            fieldName: pdfFieldName,
+            reason: `Value "${value}" not in dropdown options`
+          });
         }
+      } else {
+        skippedFields.push({
+          fieldName: pdfFieldName,
+          reason: 'Unsupported field type'
+        });
       }
     } catch (e) {
       console.warn(`Could not fill field ${pdfFieldName}:`, e);
+      skippedFields.push({
+        fieldName: pdfFieldName,
+        reason: 'Error filling field'
+      });
     }
   }
   
-  console.log(`Filled ${filledCount} fields in PDF`);
+  console.log(`Filled ${filledFields.length} fields, skipped ${skippedFields.length} fields`);
   
-  return await pdfDoc.save();
+  return {
+    pdfBytes: await pdfDoc.save(),
+    filledFields,
+    skippedFields,
+    totalFields
+  };
 }
 
 /**

@@ -7,6 +7,7 @@ import { DarkModeToggle } from './components/DarkModeToggle';
 import { HowToUse } from './components/HowToUse';
 import { Benefits } from './components/Benefits';
 import { XFAGuidance } from './components/XFAGuidance';
+import { FillReport, FillReportData } from './components/FillReport';
 import { parseCSVFile } from './utils/csvParser';
 import { loadProviderData, saveProviderDataWithTimestamp } from './utils/storage';
 import { analyzePDF, generateFieldMappings, fillPDF, downloadPDF } from './utils/pdfUtils';
@@ -22,6 +23,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isXFAForm, setIsXFAForm] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [fillReport, setFillReport] = useState<FillReportData | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
     return saved ? JSON.parse(saved) : false;
@@ -154,9 +156,19 @@ function App() {
     setIsProcessing(true);
 
     try {
-      const filledPDF = await fillPDF(pdfFile, selectedProvider, customMappings);
+      const result = await fillPDF(pdfFile, selectedProvider, customMappings);
       const filename = `${selectedProvider.name.replace(/[^a-zA-Z0-9]/g, '_')}_${pdfFile.name}`;
-      downloadPDF(filledPDF, filename);
+      downloadPDF(result.pdfBytes, filename);
+      
+      // Show fill report
+      setFillReport({
+        filename,
+        providerName: selectedProvider.name,
+        filledFields: result.filledFields.map(f => ({ fieldName: f.fieldName, value: f.value })),
+        skippedFields: result.skippedFields,
+        totalFields: result.totalFields,
+        timestamp: new Date(),
+      });
     } catch (error) {
       console.error('Error filling PDF:', error);
       alert('Error filling PDF. Please check the console for details.');
@@ -172,6 +184,18 @@ function App() {
     setCustomMappings({});
     setIsXFAForm(false);
     setPdfError(null);
+    setFillReport(null);
+  };
+
+  // Close fill report
+  const handleCloseFillReport = () => {
+    setFillReport(null);
+  };
+
+  // Fill another form after report
+  const handleFillAnotherFromReport = () => {
+    setFillReport(null);
+    handleNewForm();
   };
 
   const canProceed = selectedProvider && pdfFile && !isXFAForm;
@@ -378,6 +402,15 @@ function App() {
           <p>Provider data is stored locally in your browser for privacy.</p>
         </div>
       </div>
+
+      {/* Fill Report Modal */}
+      {fillReport && (
+        <FillReport
+          report={fillReport}
+          onClose={handleCloseFillReport}
+          onFillAnother={handleFillAnotherFromReport}
+        />
+      )}
     </div>
   );
 }
