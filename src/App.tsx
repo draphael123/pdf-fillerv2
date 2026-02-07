@@ -5,6 +5,7 @@ import { PDFUploader } from './components/PDFUploader';
 import { FieldMapper } from './components/FieldMapper';
 import { DarkModeToggle } from './components/DarkModeToggle';
 import { HowToUse } from './components/HowToUse';
+import { SampleForms } from './components/SampleForms';
 import { XFAGuidance } from './components/XFAGuidance';
 import { FillReport, FillReportData } from './components/FillReport';
 import { parseCSVFile } from './utils/csvParser';
@@ -223,6 +224,9 @@ function App() {
         <main className="space-y-8">
           {/* How to Use - Collapsible */}
           <HowToUse />
+
+          {/* Sample Forms - Collapsible */}
+          <SampleForms />
 
           {/* Provider Data Status */}
           <DataManager providers={providers} lastUpdated={lastUpdated} />
