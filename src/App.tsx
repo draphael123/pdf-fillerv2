@@ -62,14 +62,24 @@ function App() {
 
     try {
       const fields = await extractPDFFields(file);
+      console.log(`Extracted ${fields.length} fields from PDF`);
       
       if (selectedProvider) {
         const mappings = generateFieldMappings(fields, selectedProvider);
         setFieldMappings(mappings);
+      } else if (fields.length > 0) {
+        // Store fields even without provider selected
+        setFieldMappings(fields.map(f => ({
+          pdfField: f.name,
+          providerField: '',
+          confidence: 0,
+          suggestedValue: ''
+        })));
       }
     } catch (error) {
       console.error('Error processing PDF:', error);
-      alert('Error processing PDF file. Please ensure it has fillable form fields.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Error processing PDF: ${errorMessage}`);
     } finally {
       setIsProcessing(false);
     }
@@ -224,15 +234,25 @@ function App() {
             {/* No fields warning */}
             {canProceed && fieldMappings.length === 0 && !isProcessing && (
               <div className="border-t border-gray-200 pt-6 mt-6">
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start">
-                  <svg className="w-5 h-5 text-amber-500 mt-0.5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                  <div>
-                    <h3 className="font-medium text-amber-800">No Fillable Fields Detected</h3>
-                    <p className="text-sm text-amber-700 mt-1">
-                      This PDF doesn't appear to have fillable form fields. Please use Adobe Acrobat or a similar tool to add form fields to your PDF first.
-                    </p>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <div className="flex items-start">
+                    <svg className="w-5 h-5 text-amber-500 mt-0.5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    <div>
+                      <h3 className="font-medium text-amber-800">No Fillable Fields Detected</h3>
+                      <p className="text-sm text-amber-700 mt-1">
+                        This PDF doesn't have standard fillable form fields that we can detect. This commonly happens with:
+                      </p>
+                      <ul className="text-sm text-amber-700 mt-2 list-disc list-inside space-y-1">
+                        <li><strong>XFA Forms</strong> - Common in government/official documents (requires Adobe Acrobat to convert)</li>
+                        <li><strong>Flattened PDFs</strong> - Forms that were filled and saved as non-editable</li>
+                        <li><strong>Scanned documents</strong> - Image-based PDFs without actual form fields</li>
+                      </ul>
+                      <p className="text-sm text-amber-700 mt-2">
+                        <strong>Solution:</strong> Open this PDF in Adobe Acrobat, go to "Prepare Form" to detect/create fields, then save and re-upload.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>

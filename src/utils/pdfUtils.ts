@@ -2,20 +2,57 @@ import { PDFDocument, PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup } fr
 import { FieldMapping, ProviderData, PDFField } from '../types';
 
 /**
+ * Check if PDF contains XFA forms (not supported by pdf-lib)
+ */
+async function checkForXFA(arrayBuffer: ArrayBuffer): Promise<boolean> {
+  const bytes = new Uint8Array(arrayBuffer);
+  const text = new TextDecoder('latin1').decode(bytes);
+  return text.includes('/XFA') || text.includes('<xfa:') || text.includes('xmlns:xfa');
+}
+
+/**
  * Extract all form fields from a PDF
  */
 export async function extractPDFFields(pdfFile: File): Promise<PDFField[]> {
   const arrayBuffer = await pdfFile.arrayBuffer();
-  const pdfDoc = await PDFDocument.load(arrayBuffer);
-  const form = pdfDoc.getForm();
   
-  const fields = form.getFields();
+  // Check for XFA forms first
+  const hasXFA = await checkForXFA(arrayBuffer);
+  if (hasXFA) {
+    console.warn('PDF contains XFA forms which are not fully supported. Attempting to extract AcroForm fields...');
+  }
   
-  return fields.map(field => ({
-    name: field.getName(),
-    type: getFieldType(field),
-    value: getFieldValue(field)
-  }));
+  try {
+    // Try loading with different options
+    const pdfDoc = await PDFDocument.load(arrayBuffer, {
+      ignoreEncryption: true,
+    });
+    
+    const form = pdfDoc.getForm();
+    const fields = form.getFields();
+    
+    console.log(`Found ${fields.length} form fields in PDF`);
+    
+    // Log field names for debugging
+    if (fields.length > 0) {
+      console.log('Field names:', fields.map(f => f.getName()));
+    }
+    
+    return fields.map(field => ({
+      name: field.getName(),
+      type: getFieldType(field),
+      value: getFieldValue(field)
+    }));
+  } catch (error) {
+    console.error('Error extracting PDF fields:', error);
+    
+    // If it's an XFA form, provide specific message
+    if (hasXFA) {
+      throw new Error('This PDF uses XFA forms (common in government documents) which require Adobe Acrobat. Please open this PDF in Adobe Acrobat and re-save it as a standard PDF with AcroForm fields.');
+    }
+    
+    throw error;
+  }
 }
 
 /**
@@ -76,21 +113,23 @@ function calculateSimilarity(str1: string, str2: string): number {
 }
 
 /**
- * Common field name mappings
+ * Common field name mappings for provider data
  */
 const COMMON_MAPPINGS: Record<string, string[]> = {
-  'address': ['street', 'addr', 'mailing', 'physical', 'residence'],
-  'phone': ['tel', 'telephone', 'mobile', 'cell', 'contact'],
+  'address': ['street', 'addr', 'mailing', 'physical', 'residence', 'location'],
+  'phone': ['tel', 'telephone', 'mobile', 'cell', 'contact', 'fax'],
   'email': ['e-mail', 'mail', 'electronic'],
-  'npi': ['npi number', 'national provider', 'provider id'],
-  'dea': ['dea number', 'dea license', 'drug enforcement'],
-  'license': ['license number', 'state license', 'medical license'],
-  'name': ['full name', 'provider name', 'physician'],
-  'first': ['first name', 'fname', 'given name'],
-  'last': ['last name', 'lname', 'surname', 'family name'],
-  'zip': ['postal', 'zipcode', 'zip code'],
+  'npi': ['npi number', 'national provider', 'provider id', 'npi #', 'npi#'],
+  'dea': ['dea number', 'dea license', 'drug enforcement', 'dea #', 'dea#'],
+  'license': ['license number', 'state license', 'medical license', 'lic', 'license #'],
+  'name': ['full name', 'provider name', 'physician', 'aprn', 'nurse'],
+  'first': ['first name', 'fname', 'given name', 'first'],
+  'last': ['last name', 'lname', 'surname', 'family name', 'last'],
+  'zip': ['postal', 'zipcode', 'zip code', 'zip'],
   'state': ['st', 'province'],
   'city': ['town', 'municipality'],
+  'ssn': ['social security', 'ss#', 'ssn', 'social'],
+  'dob': ['date of birth', 'birth date', 'birthday', 'dob'],
 };
 
 /**
@@ -116,9 +155,9 @@ export function generateFieldMappings(
         const pdfLower = pdfField.name.toLowerCase();
         const providerLower = providerField.toLowerCase();
         
-        if (aliases.some(alias => pdfLower.includes(alias)) && 
-            providerLower.includes(key)) {
-          score = Math.max(score, 0.9);
+        if ((aliases.some(alias => pdfLower.includes(alias)) || pdfLower.includes(key)) && 
+            (providerLower.includes(key) || aliases.some(alias => providerLower.includes(alias)))) {
+          score = Math.max(score, 0.85);
         }
       }
       
@@ -128,15 +167,13 @@ export function generateFieldMappings(
       }
     }
     
-    // Only include mappings with reasonable confidence
-    if (bestScore > 0.3) {
-      mappings.push({
-        pdfField: pdfField.name,
-        providerField: bestMatch,
-        confidence: bestScore,
-        suggestedValue: providerData.data[bestMatch] || ''
-      });
-    }
+    // Include all fields, even with low confidence, so user can manually map
+    mappings.push({
+      pdfField: pdfField.name,
+      providerField: bestMatch,
+      confidence: bestScore,
+      suggestedValue: bestMatch ? (providerData.data[bestMatch] || '') : ''
+    });
   }
   
   return mappings.sort((a, b) => b.confidence - a.confidence);
@@ -151,7 +188,9 @@ export async function fillPDF(
   customMappings: Record<string, string> = {}
 ): Promise<Uint8Array> {
   const arrayBuffer = await pdfFile.arrayBuffer();
-  const pdfDoc = await PDFDocument.load(arrayBuffer);
+  const pdfDoc = await PDFDocument.load(arrayBuffer, {
+    ignoreEncryption: true,
+  });
   const form = pdfDoc.getForm();
   
   // Get auto-generated mappings
@@ -163,13 +202,16 @@ export async function fillPDF(
   
   // First add auto mappings
   for (const mapping of autoMappings) {
-    mappingDict[mapping.pdfField] = mapping.providerField;
+    if (mapping.providerField) {
+      mappingDict[mapping.pdfField] = mapping.providerField;
+    }
   }
   
   // Override with custom mappings
   Object.assign(mappingDict, customMappings);
   
   // Fill the form
+  let filledCount = 0;
   for (const [pdfFieldName, providerFieldName] of Object.entries(mappingDict)) {
     try {
       const field = form.getField(pdfFieldName);
@@ -179,26 +221,28 @@ export async function fillPDF(
       
       if (field instanceof PDFTextField) {
         field.setText(value);
+        filledCount++;
       } else if (field instanceof PDFCheckBox) {
-        if (value.toLowerCase() === 'yes' || value.toLowerCase() === 'true') {
+        if (value.toLowerCase() === 'yes' || value.toLowerCase() === 'true' || value === '1') {
           field.check();
         } else {
           field.uncheck();
         }
+        filledCount++;
       } else if (field instanceof PDFDropdown) {
         try {
           field.select(value);
+          filledCount++;
         } catch {
           // If value not in options, skip
         }
       }
-    } catch {
-      console.warn(`Could not fill field ${pdfFieldName}`);
+    } catch (e) {
+      console.warn(`Could not fill field ${pdfFieldName}:`, e);
     }
   }
   
-  // Flatten the form (make it non-editable)
-  // form.flatten();
+  console.log(`Filled ${filledCount} fields in PDF`);
   
   return await pdfDoc.save();
 }
@@ -215,4 +259,3 @@ export function downloadPDF(pdfBytes: Uint8Array, filename: string) {
   link.click();
   URL.revokeObjectURL(url);
 }
-
