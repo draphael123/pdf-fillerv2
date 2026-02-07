@@ -38,7 +38,7 @@ export const PDFUploader: React.FC<PDFUploaderProps> = ({ onFileUpload, currentF
 
   return (
     <div className="w-full">
-      <label className="block text-sm font-medium text-gray-700 mb-2">
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
         Upload PDF Form
       </label>
 
@@ -46,7 +46,7 @@ export const PDFUploader: React.FC<PDFUploaderProps> = ({ onFileUpload, currentF
         <div
           onDrop={handleDrop}
           onDragOver={handleDragOver}
-          className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition-colors cursor-pointer bg-gray-50"
+          className="border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-lg p-8 text-center hover:border-blue-500 dark:hover:border-blue-400 transition-colors cursor-pointer bg-gray-50 dark:bg-slate-900"
         >
           <input
             type="file"
@@ -57,7 +57,7 @@ export const PDFUploader: React.FC<PDFUploaderProps> = ({ onFileUpload, currentF
           />
           <label htmlFor="pdf-upload" className="cursor-pointer">
             <svg
-              className="mx-auto h-12 w-12 text-gray-400"
+              className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500"
               stroke="currentColor"
               fill="none"
               viewBox="0 0 48 48"
@@ -69,14 +69,14 @@ export const PDFUploader: React.FC<PDFUploaderProps> = ({ onFileUpload, currentF
                 strokeLinejoin="round"
               />
             </svg>
-            <p className="mt-2 text-sm text-gray-600">
-              <span className="font-semibold text-blue-600">Click to upload</span> or drag and drop
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              <span className="font-semibold text-blue-600 dark:text-blue-400">Click to upload</span> or drag and drop
             </p>
-            <p className="text-xs text-gray-500 mt-1">PDF files only</p>
+            <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">PDF files only</p>
           </label>
         </div>
       ) : (
-        <div className="border border-gray-300 rounded-lg p-4 bg-white">
+        <div className="border border-gray-300 dark:border-slate-600 rounded-lg p-4 bg-white dark:bg-slate-700">
           <div className="flex items-start justify-between">
             <div className="flex items-center space-x-3">
               <div className="flex-shrink-0">
@@ -93,17 +93,17 @@ export const PDFUploader: React.FC<PDFUploaderProps> = ({ onFileUpload, currentF
                 </svg>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">
+                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                   {currentFile.name}
                 </p>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   {(currentFile.size / 1024).toFixed(2)} KB
                 </p>
               </div>
             </div>
             <button
               onClick={() => onFileUpload(null)}
-              className="flex-shrink-0 ml-4 text-sm text-red-600 hover:text-red-800"
+              className="flex-shrink-0 ml-4 text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
             >
               Remove
             </button>
@@ -113,4 +113,3 @@ export const PDFUploader: React.FC<PDFUploaderProps> = ({ onFileUpload, currentF
     </div>
   );
 };
-

@@ -3,6 +3,8 @@ import { DataManager } from './components/DataManager';
 import { ProviderSelector } from './components/ProviderSelector';
 import { PDFUploader } from './components/PDFUploader';
 import { FieldMapper } from './components/FieldMapper';
+import { DarkModeToggle } from './components/DarkModeToggle';
+import { HowToUse } from './components/HowToUse';
 import { parseCSVFile } from './utils/csvParser';
 import { loadProviderData, saveProviderDataWithTimestamp } from './utils/storage';
 import { extractPDFFields, generateFieldMappings, fillPDF, downloadPDF } from './utils/pdfUtils';
@@ -16,6 +18,20 @@ function App() {
   const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([]);
   const [customMappings, setCustomMappings] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('darkMode');
+    return saved ? JSON.parse(saved) : false;
+  });
+
+  // Handle dark mode toggle
+  useEffect(() => {
+    localStorage.setItem('darkMode', JSON.stringify(isDarkMode));
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
 
   // Load provider data from localStorage on mount, or auto-load default CSV
   useEffect(() => {
@@ -134,23 +150,31 @@ function App() {
   const hasData = providers.length > 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 transition-colors">
       <div className="max-w-5xl mx-auto px-4 py-8">
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center p-3 bg-white rounded-2xl shadow-lg mb-4">
-            <svg className="w-10 h-10 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="relative text-center mb-8">
+          {/* Dark Mode Toggle - Top Right */}
+          <div className="absolute right-0 top-0">
+            <DarkModeToggle isDark={isDarkMode} onToggle={() => setIsDarkMode(!isDarkMode)} />
+          </div>
+
+          <div className="inline-flex items-center justify-center p-3 bg-white dark:bg-slate-800 rounded-2xl shadow-lg mb-4">
+            <svg className="w-10 h-10 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
             Provider Form Filler
           </h1>
-          <p className="text-gray-600 max-w-2xl mx-auto">
+          <p className="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
             Fill any PDF form with provider data from your Compliance Dashboard. 
             Upload your data once, then fill unlimited forms.
           </p>
         </div>
+
+        {/* How to Use Section */}
+        <HowToUse />
 
         {/* Data Manager - Always visible as the source */}
         <DataManager
@@ -160,16 +184,16 @@ function App() {
 
         {/* Form Filling Section - Only visible when data is loaded */}
         {hasData && (
-          <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-6">
             <div className="flex items-center mb-6">
-              <div className="p-2 bg-indigo-100 rounded-lg mr-3">
-                <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="p-2 bg-indigo-100 dark:bg-indigo-900 rounded-lg mr-3">
+                <svg className="w-6 h-6 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Fill a Form</h2>
-                <p className="text-sm text-gray-500">Select a provider and upload a PDF to fill</p>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Fill a Form</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Select a provider and upload a PDF to fill</p>
               </div>
             </div>
 
@@ -181,7 +205,7 @@ function App() {
                   <span className="flex items-center justify-center w-6 h-6 bg-indigo-600 text-white rounded-full text-sm font-bold mr-2">
                     1
                   </span>
-                  <span className="font-medium text-gray-700">Select Provider</span>
+                  <span className="font-medium text-gray-700 dark:text-gray-300">Select Provider</span>
                 </div>
                 <ProviderSelector
                   providers={providers}
@@ -195,16 +219,16 @@ function App() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
                     <span className={`flex items-center justify-center w-6 h-6 rounded-full text-sm font-bold mr-2 ${
-                      selectedProvider ? 'bg-indigo-600 text-white' : 'bg-gray-300 text-gray-500'
+                      selectedProvider ? 'bg-indigo-600 text-white' : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400'
                     }`}>
                       2
                     </span>
-                    <span className="font-medium text-gray-700">Upload PDF Form</span>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">Upload PDF Form</span>
                   </div>
                   {pdfFile && (
                     <button
                       onClick={handleNewForm}
-                      className="text-sm text-indigo-600 hover:text-indigo-800"
+                      className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
                     >
                       Fill Another Form
                     </button>
@@ -216,12 +240,12 @@ function App() {
 
             {/* Field Mappings */}
             {canProceed && fieldMappings.length > 0 && (
-              <div className="border-t border-gray-200 pt-6 mt-6">
+              <div className="border-t border-gray-200 dark:border-slate-700 pt-6 mt-6">
                 <div className="flex items-center mb-4">
                   <span className="flex items-center justify-center w-6 h-6 bg-indigo-600 text-white rounded-full text-sm font-bold mr-2">
                     3
                   </span>
-                  <span className="font-medium text-gray-700">Review Field Mappings</span>
+                  <span className="font-medium text-gray-700 dark:text-gray-300">Review Field Mappings</span>
                 </div>
                 <FieldMapper
                   mappings={fieldMappings}
@@ -233,23 +257,23 @@ function App() {
 
             {/* No fields warning */}
             {canProceed && fieldMappings.length === 0 && !isProcessing && (
-              <div className="border-t border-gray-200 pt-6 mt-6">
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="border-t border-gray-200 dark:border-slate-700 pt-6 mt-6">
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
                   <div className="flex items-start">
                     <svg className="w-5 h-5 text-amber-500 mt-0.5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                     </svg>
                     <div>
-                      <h3 className="font-medium text-amber-800">No Fillable Fields Detected</h3>
-                      <p className="text-sm text-amber-700 mt-1">
+                      <h3 className="font-medium text-amber-800 dark:text-amber-400">No Fillable Fields Detected</h3>
+                      <p className="text-sm text-amber-700 dark:text-amber-500 mt-1">
                         This PDF doesn't have standard fillable form fields that we can detect. This commonly happens with:
                       </p>
-                      <ul className="text-sm text-amber-700 mt-2 list-disc list-inside space-y-1">
+                      <ul className="text-sm text-amber-700 dark:text-amber-500 mt-2 list-disc list-inside space-y-1">
                         <li><strong>XFA Forms</strong> - Common in government/official documents (requires Adobe Acrobat to convert)</li>
                         <li><strong>Flattened PDFs</strong> - Forms that were filled and saved as non-editable</li>
                         <li><strong>Scanned documents</strong> - Image-based PDFs without actual form fields</li>
                       </ul>
-                      <p className="text-sm text-amber-700 mt-2">
+                      <p className="text-sm text-amber-700 dark:text-amber-500 mt-2">
                         <strong>Solution:</strong> Open this PDF in Adobe Acrobat, go to "Prepare Form" to detect/create fields, then save and re-upload.
                       </p>
                     </div>
@@ -260,14 +284,14 @@ function App() {
 
             {/* Action Button */}
             {canProceed && (
-              <div className="border-t border-gray-200 pt-6 mt-6">
+              <div className="border-t border-gray-200 dark:border-slate-700 pt-6 mt-6">
                 <button
                   onClick={handleFillPDF}
                   disabled={!canFill || isProcessing}
                   className={`w-full py-4 px-6 rounded-lg font-semibold text-white text-lg transition-all flex items-center justify-center ${
                     canFill && !isProcessing
                       ? 'bg-indigo-600 hover:bg-indigo-700 shadow-md hover:shadow-lg'
-                      : 'bg-gray-300 cursor-not-allowed'
+                      : 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed'
                   }`}
                 >
                   {isProcessing ? (
@@ -307,44 +331,8 @@ function App() {
           </div>
         )}
 
-        {/* Instructions when no data */}
-        {!hasData && (
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">How It Works</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="text-center">
-                <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-emerald-600 font-bold text-lg">1</span>
-                </div>
-                <h4 className="font-medium text-gray-900 mb-1">Upload Your Data</h4>
-                <p className="text-sm text-gray-500">
-                  Upload your Provider Compliance Dashboard CSV file. This becomes your source data.
-                </p>
-              </div>
-              <div className="text-center">
-                <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-indigo-600 font-bold text-lg">2</span>
-                </div>
-                <h4 className="font-medium text-gray-900 mb-1">Select & Upload</h4>
-                <p className="text-sm text-gray-500">
-                  Choose a provider and upload any PDF form you need to fill.
-                </p>
-              </div>
-              <div className="text-center">
-                <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-purple-600 font-bold text-lg">3</span>
-                </div>
-                <h4 className="font-medium text-gray-900 mb-1">Review & Download</h4>
-                <p className="text-sm text-gray-500">
-                  Review the auto-mapped fields, adjust if needed, then download your filled PDF.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Footer */}
-        <div className="mt-8 text-center text-sm text-gray-500">
+        <div className="mt-8 text-center text-sm text-gray-500 dark:text-gray-400">
           <p>Provider data is stored locally in your browser for privacy.</p>
         </div>
       </div>

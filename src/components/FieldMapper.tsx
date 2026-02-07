@@ -31,9 +31,9 @@ export const FieldMapper: React.FC<FieldMapperProps> = ({
   };
 
   const getConfidenceColor = (confidence: number): string => {
-    if (confidence >= 0.8) return 'bg-green-100 text-green-800';
-    if (confidence >= 0.5) return 'bg-yellow-100 text-yellow-800';
-    return 'bg-red-100 text-red-800';
+    if (confidence >= 0.8) return 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-400';
+    if (confidence >= 0.5) return 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-400';
+    return 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-400';
   };
 
   const getConfidenceLabel = (confidence: number): string => {
@@ -51,10 +51,10 @@ export const FieldMapper: React.FC<FieldMapperProps> = ({
   return (
     <div className="w-full">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-medium text-gray-900">
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white">
           Field Mappings ({displayedMappings.length})
         </h3>
-        <label className="flex items-center text-sm text-gray-600 cursor-pointer">
+        <label className="flex items-center text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
           <input
             type="checkbox"
             checked={showAllFields}
@@ -65,12 +65,12 @@ export const FieldMapper: React.FC<FieldMapperProps> = ({
         </label>
       </div>
 
-      <p className="text-sm text-gray-600 mb-4">
+      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
         Review the auto-detected field mappings below. High-confidence mappings are more likely to be correct.
       </p>
 
       {displayedMappings.length === 0 ? (
-        <div className="text-center py-8 text-gray-500 border border-dashed border-gray-300 rounded-lg">
+        <div className="text-center py-8 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-slate-600 rounded-lg">
           No field mappings detected. The PDF may not have fillable form fields.
         </div>
       ) : (
@@ -78,14 +78,14 @@ export const FieldMapper: React.FC<FieldMapperProps> = ({
           {displayedMappings.map((mapping, index) => (
             <div
               key={index}
-              className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-sm transition-shadow"
+              className="border border-gray-200 dark:border-slate-700 rounded-lg p-4 bg-white dark:bg-slate-800 hover:shadow-sm transition-shadow"
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1">
-                  <div className="font-medium text-gray-900 text-sm">
+                  <div className="font-medium text-gray-900 dark:text-white text-sm">
                     {mapping.pdfField}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">PDF Field Name</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">PDF Field Name</div>
                 </div>
                 <span
                   className={`px-2 py-1 text-xs font-medium rounded ${getConfidenceColor(
@@ -99,13 +99,13 @@ export const FieldMapper: React.FC<FieldMapperProps> = ({
               <div className="grid grid-cols-1 gap-3">
                 {/* Provider Field Selector */}
                 <div>
-                  <label className="block text-xs text-gray-600 mb-1">
+                  <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">
                     Maps to Provider Field:
                   </label>
                   <select
                     value={customMappings[mapping.pdfField] || mapping.providerField}
                     onChange={(e) => handleMappingChange(mapping.pdfField, e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">-- Select Field --</option>
                     {providerFieldOptions.map((field) => (
@@ -118,9 +118,9 @@ export const FieldMapper: React.FC<FieldMapperProps> = ({
 
                 {/* Value Preview */}
                 {customMappings[mapping.pdfField] && (
-                  <div className="bg-gray-50 rounded-md p-2 border border-gray-200">
-                    <div className="text-xs text-gray-600 mb-1">Value to be filled:</div>
-                    <div className="text-sm text-gray-900 font-mono">
+                  <div className="bg-gray-50 dark:bg-slate-900 rounded-md p-2 border border-gray-200 dark:border-slate-700">
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Value to be filled:</div>
+                    <div className="text-sm text-gray-900 dark:text-white font-mono">
                       {provider.data[customMappings[mapping.pdfField]] || '(empty)'}
                     </div>
                   </div>
@@ -131,10 +131,10 @@ export const FieldMapper: React.FC<FieldMapperProps> = ({
         </div>
       )}
 
-      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+      <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
         <div className="flex items-start">
           <svg
-            className="w-5 h-5 text-blue-600 mt-0.5 mr-2 flex-shrink-0"
+            className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 mr-2 flex-shrink-0"
             fill="currentColor"
             viewBox="0 0 20 20"
           >
@@ -144,7 +144,7 @@ export const FieldMapper: React.FC<FieldMapperProps> = ({
               clipRule="evenodd"
             />
           </svg>
-          <div className="text-sm text-blue-800">
+          <div className="text-sm text-blue-800 dark:text-blue-400">
             <strong>Tip:</strong> You can customize any mapping by selecting a different provider field
             from the dropdown. The confidence score helps identify which mappings might need review.
           </div>
@@ -153,4 +153,3 @@ export const FieldMapper: React.FC<FieldMapperProps> = ({
     </div>
   );
 };
-
