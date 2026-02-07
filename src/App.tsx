@@ -17,15 +17,35 @@ function App() {
   const [customMappings, setCustomMappings] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Load provider data from localStorage on mount
+  // Load provider data from localStorage on mount, or auto-load default CSV
   useEffect(() => {
-    const stored = loadProviderData();
-    if (stored) {
-      setProviders(stored.providers);
-      if ((stored as { lastUpdated?: string }).lastUpdated) {
-        setLastUpdated((stored as { lastUpdated?: string }).lastUpdated!);
+    const loadData = async () => {
+      const stored = loadProviderData();
+      if (stored && stored.providers.length > 0) {
+        setProviders(stored.providers);
+        if ((stored as { lastUpdated?: string }).lastUpdated) {
+          setLastUpdated((stored as { lastUpdated?: string }).lastUpdated!);
+        }
+      } else {
+        // Auto-load the bundled Provider Compliance Dashboard CSV
+        try {
+          const response = await fetch('/provider-data.csv');
+          if (response.ok) {
+            const blob = await response.blob();
+            const file = new File([blob], 'provider-data.csv', { type: 'text/csv' });
+            const data = await parseCSVFile(file);
+            if (data.providers.length > 0) {
+              setProviders(data.providers);
+              saveProviderDataWithTimestamp(data.providers, data.allFields);
+              setLastUpdated(new Date().toISOString());
+            }
+          }
+        } catch (error) {
+          console.log('No bundled provider data found, waiting for upload');
+        }
       }
-    }
+    };
+    loadData();
   }, []);
 
   // Handle CSV upload
