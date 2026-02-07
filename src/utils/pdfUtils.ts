@@ -1,29 +1,99 @@
 import { PDFDocument, PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup } from 'pdf-lib';
 import { FieldMapping, ProviderData, PDFField } from '../types';
 
-/**
- * Check if PDF contains XFA forms (not supported by pdf-lib)
- */
-async function checkForXFA(arrayBuffer: ArrayBuffer): Promise<boolean> {
-  const bytes = new Uint8Array(arrayBuffer);
-  const text = new TextDecoder('latin1').decode(bytes);
-  return text.includes('/XFA') || text.includes('<xfa:') || text.includes('xmlns:xfa');
+export interface PDFAnalysisResult {
+  fields: PDFField[];
+  isXFA: boolean;
+  hasAcroFields: boolean;
+  xfaType?: 'dynamic' | 'static' | 'hybrid';
+  errorMessage?: string;
 }
 
 /**
- * Extract all form fields from a PDF
+ * Comprehensive XFA detection
+ */
+async function analyzeForXFA(arrayBuffer: ArrayBuffer): Promise<{
+  isXFA: boolean;
+  xfaType?: 'dynamic' | 'static' | 'hybrid';
+  details: string[];
+}> {
+  const bytes = new Uint8Array(arrayBuffer);
+  const text = new TextDecoder('latin1').decode(bytes);
+  
+  const details: string[] = [];
+  let isXFA = false;
+  let xfaType: 'dynamic' | 'static' | 'hybrid' | undefined;
+  
+  // Check for various XFA indicators
+  if (text.includes('/XFA')) {
+    isXFA = true;
+    details.push('Contains /XFA dictionary reference');
+  }
+  
+  if (text.includes('<xfa:data') || text.includes('xmlns:xfa')) {
+    isXFA = true;
+    details.push('Contains XFA XML namespace declarations');
+  }
+  
+  if (text.includes('<template xmlns')) {
+    isXFA = true;
+    details.push('Contains XFA template definition');
+  }
+  
+  if (text.includes('XFA Foreground')) {
+    isXFA = true;
+    details.push('Contains XFA foreground layer');
+  }
+  
+  // Determine XFA type
+  if (isXFA) {
+    if (text.includes('<dynamicRender>') || text.includes('subform')) {
+      xfaType = 'dynamic';
+      details.push('Detected as Dynamic XFA form');
+    } else if (text.includes('<acroForm>') && text.includes('/XFA')) {
+      xfaType = 'hybrid';
+      details.push('Detected as Hybrid XFA/AcroForm');
+    } else {
+      xfaType = 'static';
+      details.push('Detected as Static XFA form');
+    }
+  }
+  
+  // Check for flattened forms
+  if (text.includes('/Flatten') || (text.includes('/Fields') && text.includes('[]'))) {
+    details.push('Form may be flattened (fields converted to static content)');
+  }
+  
+  return { isXFA, xfaType, details };
+}
+
+/**
+ * Extract all form fields from a PDF with detailed analysis
  */
 export async function extractPDFFields(pdfFile: File): Promise<PDFField[]> {
+  const result = await analyzePDF(pdfFile);
+  
+  if (result.errorMessage) {
+    throw new Error(result.errorMessage);
+  }
+  
+  return result.fields;
+}
+
+/**
+ * Full PDF analysis including XFA detection
+ */
+export async function analyzePDF(pdfFile: File): Promise<PDFAnalysisResult> {
   const arrayBuffer = await pdfFile.arrayBuffer();
   
-  // Check for XFA forms first
-  const hasXFA = await checkForXFA(arrayBuffer);
-  if (hasXFA) {
-    console.warn('PDF contains XFA forms which are not fully supported. Attempting to extract AcroForm fields...');
+  // Analyze for XFA forms
+  const xfaAnalysis = await analyzeForXFA(arrayBuffer);
+  
+  if (xfaAnalysis.details.length > 0) {
+    console.log('XFA Analysis:', xfaAnalysis.details);
   }
   
   try {
-    // Try loading with different options
     const pdfDoc = await PDFDocument.load(arrayBuffer, {
       ignoreEncryption: true,
     });
@@ -31,27 +101,71 @@ export async function extractPDFFields(pdfFile: File): Promise<PDFField[]> {
     const form = pdfDoc.getForm();
     const fields = form.getFields();
     
-    console.log(`Found ${fields.length} form fields in PDF`);
+    console.log(`Found ${fields.length} AcroForm fields in PDF`);
     
-    // Log field names for debugging
-    if (fields.length > 0) {
-      console.log('Field names:', fields.map(f => f.getName()));
-    }
-    
-    return fields.map(field => ({
+    const pdfFields = fields.map(field => ({
       name: field.getName(),
       type: getFieldType(field),
       value: getFieldValue(field)
     }));
-  } catch (error) {
-    console.error('Error extracting PDF fields:', error);
     
-    // If it's an XFA form, provide specific message
-    if (hasXFA) {
-      throw new Error('This PDF uses XFA forms (common in government documents) which require Adobe Acrobat. Please open this PDF in Adobe Acrobat and re-save it as a standard PDF with AcroForm fields.');
+    // If XFA is detected but we found AcroForm fields, it's likely a hybrid
+    if (xfaAnalysis.isXFA && fields.length > 0) {
+      console.log('Hybrid XFA/AcroForm detected - using AcroForm fields');
+      return {
+        fields: pdfFields,
+        isXFA: true,
+        hasAcroFields: true,
+        xfaType: 'hybrid',
+      };
     }
     
-    throw error;
+    // Pure XFA with no AcroForm fields
+    if (xfaAnalysis.isXFA && fields.length === 0) {
+      return {
+        fields: [],
+        isXFA: true,
+        hasAcroFields: false,
+        xfaType: xfaAnalysis.xfaType,
+        errorMessage: 'XFA_FORM_DETECTED',
+      };
+    }
+    
+    // No fields found and not XFA
+    if (fields.length === 0) {
+      return {
+        fields: [],
+        isXFA: false,
+        hasAcroFields: false,
+        errorMessage: 'NO_FIELDS_DETECTED',
+      };
+    }
+    
+    return {
+      fields: pdfFields,
+      isXFA: false,
+      hasAcroFields: true,
+    };
+    
+  } catch (error) {
+    console.error('Error analyzing PDF:', error);
+    
+    if (xfaAnalysis.isXFA) {
+      return {
+        fields: [],
+        isXFA: true,
+        hasAcroFields: false,
+        xfaType: xfaAnalysis.xfaType,
+        errorMessage: 'XFA_FORM_DETECTED',
+      };
+    }
+    
+    return {
+      fields: [],
+      isXFA: false,
+      hasAcroFields: false,
+      errorMessage: 'PDF_LOAD_ERROR',
+    };
   }
 }
 

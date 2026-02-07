@@ -6,9 +6,10 @@ import { FieldMapper } from './components/FieldMapper';
 import { DarkModeToggle } from './components/DarkModeToggle';
 import { HowToUse } from './components/HowToUse';
 import { Benefits } from './components/Benefits';
+import { XFAGuidance } from './components/XFAGuidance';
 import { parseCSVFile } from './utils/csvParser';
 import { loadProviderData, saveProviderDataWithTimestamp } from './utils/storage';
-import { extractPDFFields, generateFieldMappings, fillPDF, downloadPDF } from './utils/pdfUtils';
+import { analyzePDF, generateFieldMappings, fillPDF, downloadPDF } from './utils/pdfUtils';
 import { ProviderData, FieldMapping } from './types';
 
 function App() {
@@ -19,6 +20,8 @@ function App() {
   const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([]);
   const [customMappings, setCustomMappings] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isXFAForm, setIsXFAForm] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
     return saved ? JSON.parse(saved) : false;
@@ -67,6 +70,10 @@ function App() {
 
   // Handle PDF upload and field extraction
   const handlePDFUpload = async (file: File | null) => {
+    // Reset states
+    setIsXFAForm(false);
+    setPdfError(null);
+    
     if (!file) {
       setPdfFile(null);
       setFieldMappings([]);
@@ -78,15 +85,32 @@ function App() {
     setIsProcessing(true);
 
     try {
-      const fields = await extractPDFFields(file);
-      console.log(`Extracted ${fields.length} fields from PDF`);
+      const result = await analyzePDF(file);
+      
+      // Check for XFA forms
+      if (result.isXFA && !result.hasAcroFields) {
+        setIsXFAForm(true);
+        setFieldMappings([]);
+        setIsProcessing(false);
+        return;
+      }
+      
+      // Check for no fields
+      if (result.fields.length === 0) {
+        setPdfError(result.errorMessage || 'NO_FIELDS_DETECTED');
+        setFieldMappings([]);
+        setIsProcessing(false);
+        return;
+      }
+      
+      console.log(`Extracted ${result.fields.length} fields from PDF`);
       
       if (selectedProvider) {
-        const mappings = generateFieldMappings(fields, selectedProvider);
+        const mappings = generateFieldMappings(result.fields, selectedProvider);
         setFieldMappings(mappings);
-      } else if (fields.length > 0) {
+      } else if (result.fields.length > 0) {
         // Store fields even without provider selected
-        setFieldMappings(fields.map(f => ({
+        setFieldMappings(result.fields.map(f => ({
           pdfField: f.name,
           providerField: '',
           confidence: 0,
@@ -96,7 +120,7 @@ function App() {
     } catch (error) {
       console.error('Error processing PDF:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      alert(`Error processing PDF: ${errorMessage}`);
+      setPdfError(errorMessage);
     } finally {
       setIsProcessing(false);
     }
@@ -106,13 +130,15 @@ function App() {
   const handleProviderSelect = async (provider: ProviderData) => {
     setSelectedProvider(provider);
     
-    // If PDF is already uploaded, regenerate mappings
-    if (pdfFile) {
+    // If PDF is already uploaded and has fields, regenerate mappings
+    if (pdfFile && !isXFAForm && fieldMappings.length > 0) {
       setIsProcessing(true);
       try {
-        const fields = await extractPDFFields(pdfFile);
-        const mappings = generateFieldMappings(fields, provider);
-        setFieldMappings(mappings);
+        const result = await analyzePDF(pdfFile);
+        if (result.fields.length > 0) {
+          const mappings = generateFieldMappings(result.fields, provider);
+          setFieldMappings(mappings);
+        }
       } catch (error) {
         console.error('Error generating mappings:', error);
       } finally {
@@ -144,9 +170,11 @@ function App() {
     setPdfFile(null);
     setFieldMappings([]);
     setCustomMappings({});
+    setIsXFAForm(false);
+    setPdfError(null);
   };
 
-  const canProceed = selectedProvider && pdfFile;
+  const canProceed = selectedProvider && pdfFile && !isXFAForm;
   const canFill = canProceed && fieldMappings.length > 0;
   const hasData = providers.length > 0;
 
@@ -242,6 +270,16 @@ function App() {
               </div>
             </div>
 
+            {/* XFA Form Detected - Show detailed guidance */}
+            {isXFAForm && pdfFile && (
+              <div className="border-t border-gray-200 dark:border-slate-700 pt-6 mt-6">
+                <XFAGuidance 
+                  filename={pdfFile.name} 
+                  onDismiss={handleNewForm}
+                />
+              </div>
+            )}
+
             {/* Field Mappings */}
             {canProceed && fieldMappings.length > 0 && (
               <div className="border-t border-gray-200 dark:border-slate-700 pt-6 mt-6">
@@ -259,8 +297,8 @@ function App() {
               </div>
             )}
 
-            {/* No fields warning */}
-            {canProceed && fieldMappings.length === 0 && !isProcessing && (
+            {/* No fields warning (non-XFA) */}
+            {canProceed && fieldMappings.length === 0 && !isProcessing && !isXFAForm && pdfError && (
               <div className="border-t border-gray-200 dark:border-slate-700 pt-6 mt-6">
                 <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
                   <div className="flex items-start">
@@ -273,12 +311,12 @@ function App() {
                         This PDF doesn't have standard fillable form fields that we can detect. This commonly happens with:
                       </p>
                       <ul className="text-sm text-amber-700 dark:text-amber-500 mt-2 list-disc list-inside space-y-1">
-                        <li><strong>XFA Forms</strong> - Common in government/official documents (requires Adobe Acrobat to convert)</li>
                         <li><strong>Flattened PDFs</strong> - Forms that were filled and saved as non-editable</li>
                         <li><strong>Scanned documents</strong> - Image-based PDFs without actual form fields</li>
+                        <li><strong>Static PDFs</strong> - Documents created without interactive form fields</li>
                       </ul>
                       <p className="text-sm text-amber-700 dark:text-amber-500 mt-2">
-                        <strong>Solution:</strong> Open this PDF in Adobe Acrobat, go to "Prepare Form" to detect/create fields, then save and re-upload.
+                        <strong>Solution:</strong> Open this PDF in Adobe Acrobat Pro, go to Tools → "Prepare Form" to detect/create fields, then save and re-upload.
                       </p>
                     </div>
                   </div>
@@ -287,7 +325,7 @@ function App() {
             )}
 
             {/* Action Button */}
-            {canProceed && (
+            {canProceed && !isXFAForm && (
               <div className="border-t border-gray-200 dark:border-slate-700 pt-6 mt-6">
                 <button
                   onClick={handleFillPDF}
