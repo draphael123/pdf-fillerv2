@@ -4,7 +4,7 @@ import { ProviderSelector } from './components/ProviderSelector';
 import { PDFUploader } from './components/PDFUploader';
 import { FieldMapper } from './components/FieldMapper';
 import { parseCSVFile } from './utils/csvParser';
-import { loadProviderData, saveProviderDataWithTimestamp, clearProviderData } from './utils/storage';
+import { loadProviderData, saveProviderDataWithTimestamp } from './utils/storage';
 import { extractPDFFields, generateFieldMappings, fillPDF, downloadPDF } from './utils/pdfUtils';
 import { ProviderData, FieldMapping } from './types';
 
@@ -47,37 +47,6 @@ function App() {
     };
     loadData();
   }, []);
-
-  // Handle CSV upload
-  const handleCSVUpload = async (file: File) => {
-    try {
-      const data = await parseCSVFile(file);
-      setProviders(data.providers);
-      saveProviderDataWithTimestamp(data.providers, data.allFields);
-      setLastUpdated(new Date().toISOString());
-      // Reset selections when new data is loaded
-      setSelectedProvider(null);
-      setPdfFile(null);
-      setFieldMappings([]);
-      setCustomMappings({});
-    } catch (error) {
-      console.error('Error parsing CSV:', error);
-      alert('Error parsing CSV file. Please check the format.');
-    }
-  };
-
-  // Handle clear data
-  const handleClearData = () => {
-    if (confirm('Are you sure you want to clear all provider data? This cannot be undone.')) {
-      clearProviderData();
-      setProviders([]);
-      setLastUpdated(null);
-      setSelectedProvider(null);
-      setPdfFile(null);
-      setFieldMappings([]);
-      setCustomMappings({});
-    }
-  };
 
   // Handle PDF upload and field extraction
   const handlePDFUpload = async (file: File | null) => {
@@ -177,8 +146,6 @@ function App() {
         <DataManager
           providers={providers}
           lastUpdated={lastUpdated}
-          onUploadCSV={handleCSVUpload}
-          onClearData={handleClearData}
         />
 
         {/* Form Filling Section - Only visible when data is loaded */}
