@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { DataManager } from './components/DataManager';
 import { ProviderSelector } from './components/ProviderSelector';
 import { PDFUploader } from './components/PDFUploader';
@@ -8,26 +8,76 @@ import { HowToUse } from './components/HowToUse';
 import { SampleForms } from './components/SampleForms';
 import { XFAGuidance } from './components/XFAGuidance';
 import { FillReport, FillReportData } from './components/FillReport';
+import { BatchFillModal } from './components/BatchFillModal';
+import { ProviderQuickView } from './components/ProviderQuickView';
+import { StateFilter, filterProvidersByState } from './components/StateFilter';
+import { MissingDataIndicator } from './components/MissingDataIndicator';
+import { RecentActivity, ActivityItem, loadActivities, clearActivities, saveActivity } from './components/RecentActivity';
+import { useKeyboardShortcuts, KeyboardHelpModal, ShortcutHint } from './components/KeyboardShortcuts';
 import { parseCSVFile } from './utils/csvParser';
 import { loadProviderData, saveProviderDataWithTimestamp } from './utils/storage';
 import { analyzePDF, generateFieldMappings, fillPDF, downloadPDF } from './utils/pdfUtils';
-import { ProviderData, FieldMapping } from './types';
+import { ProviderData, FieldMapping, PDFField } from './types';
 
 function App() {
   const [providers, setProviders] = useState<ProviderData[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<ProviderData | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfFields, setPdfFields] = useState<PDFField[]>([]);
   const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([]);
   const [customMappings, setCustomMappings] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [isXFAForm, setIsXFAForm] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [fillReport, setFillReport] = useState<FillReportData | null>(null);
+  
+  // New features state
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [quickViewProvider, setQuickViewProvider] = useState<ProviderData | null>(null);
+  const [selectedState, setSelectedState] = useState<string | null>(null);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
     return saved ? JSON.parse(saved) : false;
   });
+
+  // Keyboard shortcuts handler
+  const handleKeyboardAction = useCallback((action: string) => {
+    switch (action) {
+      case 'search':
+        searchInputRef.current?.focus();
+        break;
+      case 'fill':
+        if (selectedProvider && pdfFile && !isXFAForm && fieldMappings.length > 0) {
+          handleFillPDF();
+        }
+        break;
+      case 'batch':
+        if (pdfFile && !isXFAForm && providers.length > 0) {
+          setShowBatchModal(true);
+        }
+        break;
+      case 'darkmode':
+        setIsDarkMode((prev: boolean) => !prev);
+        break;
+      case 'help':
+        setShowKeyboardHelp(true);
+        break;
+      case 'close':
+        setShowBatchModal(false);
+        setQuickViewProvider(null);
+        setShowKeyboardHelp(false);
+        setFillReport(null);
+        break;
+    }
+  }, [selectedProvider, pdfFile, isXFAForm, fieldMappings, providers]);
+
+  useKeyboardShortcuts(handleKeyboardAction);
 
   useEffect(() => {
     localStorage.setItem('darkMode', JSON.stringify(isDarkMode));
@@ -37,6 +87,11 @@ function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [isDarkMode]);
+
+  // Load activities on mount
+  useEffect(() => {
+    setActivities(loadActivities());
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -70,6 +125,7 @@ function App() {
   const handlePDFUpload = async (file: File | null) => {
     setIsXFAForm(false);
     setPdfError(null);
+    setPdfFields([]);
     
     if (!file) {
       setPdfFile(null);
@@ -97,6 +153,8 @@ function App() {
         setIsProcessing(false);
         return;
       }
+      
+      setPdfFields(result.fields);
       
       if (selectedProvider) {
         const mappings = generateFieldMappings(result.fields, selectedProvider);
@@ -146,6 +204,14 @@ function App() {
       const filename = `${selectedProvider.name.replace(/[^a-zA-Z0-9]/g, '_')}_${pdfFile.name}`;
       downloadPDF(result.pdfBytes, filename);
       
+      // Save activity
+      const activity = saveActivity({
+        type: 'fill',
+        providerName: selectedProvider.name,
+        fileName: pdfFile.name,
+      });
+      setActivities(prev => [activity, ...prev]);
+      
       setFillReport({
         filename,
         providerName: selectedProvider.name,
@@ -169,6 +235,7 @@ function App() {
     setIsXFAForm(false);
     setPdfError(null);
     setFillReport(null);
+    setPdfFields([]);
   };
 
   const handleCloseFillReport = () => {
@@ -180,9 +247,18 @@ function App() {
     handleNewForm();
   };
 
+  const handleClearActivities = () => {
+    clearActivities();
+    setActivities([]);
+  };
+
+  // Filter providers by state
+  const filteredProviders = filterProvidersByState(providers, selectedState);
+
   const canProceed = selectedProvider && pdfFile && !isXFAForm;
   const canFill = canProceed && fieldMappings.length > 0;
   const hasData = providers.length > 0;
+  const canBatchFill = pdfFile && !isXFAForm && providers.length > 0;
 
   return (
     <div className="min-h-screen bg-[#faf9f7] dark:bg-[#16161d] transition-colors">
@@ -216,7 +292,18 @@ function App() {
                 Select a provider, upload a form, download.
               </p>
             </div>
-            <DarkModeToggle isDark={isDarkMode} onToggle={() => setIsDarkMode(!isDarkMode)} />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowKeyboardHelp(true)}
+                className="p-2 text-[#6b7280] hover:text-[#1a1a2e] dark:hover:text-[#e8e6e3] transition-colors"
+                title="Keyboard shortcuts"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h1M3 12H2m15.325-4.275l.707-.707M6.707 6.707l-.707-.707m12.728 0l-.707.707M6.707 17.293l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              </button>
+              <DarkModeToggle isDark={isDarkMode} onToggle={() => setIsDarkMode(!isDarkMode)} />
+            </div>
           </div>
         </header>
 
@@ -231,6 +318,11 @@ function App() {
           {/* Provider Data Status */}
           <DataManager providers={providers} lastUpdated={lastUpdated} />
 
+          {/* Recent Activity */}
+          {activities.length > 0 && (
+            <RecentActivity activities={activities} onClear={handleClearActivities} />
+          )}
+
           {/* Form Filling */}
           {hasData && (
             <section className="bg-white dark:bg-[#1e1e28] rounded-xl border border-[#e5e2dd] dark:border-[#2a2a38] p-8">
@@ -243,14 +335,37 @@ function App() {
                     Two steps: pick provider, upload PDF
                   </p>
                 </div>
-                {pdfFile && (
-                  <button
-                    onClick={handleNewForm}
-                    className="text-sm text-[#c45d3a] hover:text-[#a84d2f] font-medium"
-                  >
-                    Start over
-                  </button>
-                )}
+                <div className="flex items-center gap-3">
+                  {canBatchFill && (
+                    <button
+                      onClick={() => setShowBatchModal(true)}
+                      className="px-4 py-2 text-sm font-medium text-[#c45d3a] hover:bg-[#fef5f0] dark:hover:bg-[#2a1f1a] rounded-lg transition-colors flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                      </svg>
+                      Batch Fill
+                      <ShortcutHint keys="Ctrl+B" />
+                    </button>
+                  )}
+                  {pdfFile && (
+                    <button
+                      onClick={handleNewForm}
+                      className="text-sm text-[#c45d3a] hover:text-[#a84d2f] font-medium"
+                    >
+                      Start over
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* State Filter */}
+              <div className="mb-6 pb-6 border-b border-[#e5e2dd] dark:border-[#2a2a38]">
+                <StateFilter
+                  providers={providers}
+                  selectedState={selectedState}
+                  onStateChange={setSelectedState}
+                />
               </div>
 
               <div className="grid md:grid-cols-2 gap-8">
@@ -263,11 +378,18 @@ function App() {
                     <span className="text-sm font-medium text-[#1a1a2e] dark:text-[#e8e6e3]">
                       Select provider
                     </span>
+                    {selectedState && (
+                      <span className="text-xs bg-[#c45d3a] text-white px-2 py-0.5 rounded">
+                        {filteredProviders.length} in {selectedState}
+                      </span>
+                    )}
                   </div>
                   <ProviderSelector
-                    providers={providers}
+                    providers={filteredProviders}
                     selectedProvider={selectedProvider}
                     onSelect={handleProviderSelect}
+                    onQuickView={setQuickViewProvider}
+                    searchInputRef={searchInputRef}
                   />
                 </div>
 
@@ -288,6 +410,17 @@ function App() {
                   <PDFUploader onFileUpload={handlePDFUpload} currentFile={pdfFile} />
                 </div>
               </div>
+
+              {/* Missing Data Indicator */}
+              {selectedProvider && pdfFields.length > 0 && fieldMappings.length > 0 && !isXFAForm && (
+                <div className="mt-6">
+                  <MissingDataIndicator
+                    provider={selectedProvider}
+                    pdfFields={pdfFields}
+                    fieldMappings={fieldMappings}
+                  />
+                </div>
+              )}
 
               {/* XFA Warning */}
               {isXFAForm && pdfFile && (
@@ -361,6 +494,7 @@ function App() {
                     ) : (
                       <>
                         Fill & Download PDF
+                        <ShortcutHint keys="Ctrl+F" className="opacity-50" />
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                         </svg>
@@ -375,19 +509,56 @@ function App() {
 
         {/* Footer */}
         <footer className="mt-16 pt-8 border-t border-[#e5e2dd] dark:border-[#2a2a38]">
-          <p className="text-sm text-[#9a9590] dark:text-[#5a5a6a] text-center">
-            All data stays in your browser. Nothing is sent to any server.
-          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-sm text-[#9a9590] dark:text-[#5a5a6a]">
+              All data stays in your browser. Nothing is sent to any server.
+            </p>
+            <button
+              onClick={() => setShowKeyboardHelp(true)}
+              className="text-sm text-[#9a9590] dark:text-[#5a5a6a] hover:text-[#6b7280] flex items-center gap-1"
+            >
+              <kbd className="px-1.5 py-0.5 text-xs bg-[#e5e2dd] dark:bg-[#2a2a38] rounded">?</kbd>
+              Keyboard shortcuts
+            </button>
+          </div>
         </footer>
       </div>
 
-      {/* Fill Report Modal */}
+      {/* Modals */}
       {fillReport && (
         <FillReport
           report={fillReport}
           onClose={handleCloseFillReport}
           onFillAnother={handleFillAnotherFromReport}
         />
+      )}
+
+      {showBatchModal && pdfFile && (
+        <BatchFillModal
+          providers={filteredProviders}
+          pdfFile={pdfFile}
+          onClose={() => {
+            setShowBatchModal(false);
+            // Save batch activity (we don't know exact count here, so approximate)
+            const activity = saveActivity({
+              type: 'batch',
+              providerCount: filteredProviders.length,
+              fileName: pdfFile.name,
+            });
+            setActivities(prev => [activity, ...prev]);
+          }}
+        />
+      )}
+
+      {quickViewProvider && (
+        <ProviderQuickView
+          provider={quickViewProvider}
+          onClose={() => setQuickViewProvider(null)}
+        />
+      )}
+
+      {showKeyboardHelp && (
+        <KeyboardHelpModal onClose={() => setShowKeyboardHelp(false)} />
       )}
     </div>
   );
