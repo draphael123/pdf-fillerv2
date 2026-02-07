@@ -238,11 +238,12 @@ function calculateSimilarity(str1: string, str2: string): number {
 
 /**
  * Common field name mappings for provider data
+ * Note: Be careful with generic terms like 'contact' that appear in multiple field types
  */
 const COMMON_MAPPINGS: Record<string, string[]> = {
   'address': ['street', 'addr', 'mailing', 'physical', 'residence', 'location'],
-  'phone': ['tel', 'telephone', 'mobile', 'cell', 'contact', 'fax'],
-  'email': ['e-mail', 'mail', 'electronic'],
+  'phone': ['tel', 'telephone', 'mobile', 'cell', 'fax', 'phone number', 'phone #'],
+  'email': ['e-mail', 'mail', 'electronic', 'email address'],
   'npi': ['npi number', 'national provider', 'provider id', 'npi #', 'npi#'],
   'dea': ['dea number', 'dea license', 'drug enforcement', 'dea #', 'dea#'],
   'license': ['license number', 'state license', 'medical license', 'lic', 'license #'],
@@ -254,6 +255,14 @@ const COMMON_MAPPINGS: Record<string, string[]> = {
   'city': ['town', 'municipality'],
   'ssn': ['social security', 'ss#', 'ssn', 'social'],
   'dob': ['date of birth', 'birth date', 'birthday', 'dob'],
+};
+
+/**
+ * Mutually exclusive field types - if a field matches one type, it should NOT match the other
+ */
+const EXCLUSIVE_TYPES: Record<string, string[]> = {
+  'email': ['phone', 'tel', 'fax', 'mobile', 'cell'],
+  'phone': ['email', 'e-mail', 'mail'],
 };
 
 /**
@@ -289,6 +298,36 @@ function shouldExcludeField(fieldName: string): boolean {
 }
 
 /**
+ * Check if a PDF field type conflicts with a provider field type
+ * E.g., a PDF field named "Contact Email" should not match a provider field with "Phone"
+ */
+function hasTypeConflict(pdfFieldName: string, providerFieldName: string): boolean {
+  const pdfLower = pdfFieldName.toLowerCase();
+  const providerLower = providerFieldName.toLowerCase();
+  
+  for (const [type, exclusions] of Object.entries(EXCLUSIVE_TYPES)) {
+    // If the PDF field contains this type keyword
+    if (pdfLower.includes(type)) {
+      // Check if the provider field contains any of the exclusion keywords
+      if (exclusions.some(exc => providerLower.includes(exc))) {
+        return true;
+      }
+    }
+  }
+  
+  // Also check the reverse - if provider field is one type and PDF field suggests another
+  for (const [type, exclusions] of Object.entries(EXCLUSIVE_TYPES)) {
+    if (providerLower.includes(type)) {
+      if (exclusions.some(exc => pdfLower.includes(exc))) {
+        return true;
+      }
+    }
+  }
+  
+  return false;
+}
+
+/**
  * Smart field mapping between PDF fields and provider data
  * Only maps fields that have a reasonable match in the provider data
  */
@@ -314,6 +353,11 @@ export function generateFieldMappings(
           continue;
         }
         
+        // Check for type conflicts (e.g., email field should not match phone data)
+        if (hasTypeConflict(pdfField.name, providerField)) {
+          continue;
+        }
+        
         let score = calculateSimilarity(pdfField.name, providerField);
         
         // Boost score for common mappings
@@ -321,8 +365,11 @@ export function generateFieldMappings(
           const pdfLower = pdfField.name.toLowerCase();
           const providerLower = providerField.toLowerCase();
           
-          if ((aliases.some(alias => pdfLower.includes(alias)) || pdfLower.includes(key)) && 
-              (providerLower.includes(key) || aliases.some(alias => providerLower.includes(alias)))) {
+          // Both must match the same category
+          const pdfMatches = aliases.some(alias => pdfLower.includes(alias)) || pdfLower.includes(key);
+          const providerMatches = providerLower.includes(key) || aliases.some(alias => providerLower.includes(alias));
+          
+          if (pdfMatches && providerMatches) {
             score = Math.max(score, 0.85);
           }
         }
