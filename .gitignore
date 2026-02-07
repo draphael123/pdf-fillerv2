@@ -26,3 +26,4 @@ dist-ssr
 # Extracted zip folder
 provider-pdf-filler/
 
+.vercel
