@@ -1,67 +1,112 @@
 import { ParsedProviderData, ProviderData } from '../types';
 
 /**
+ * Properly parse CSV handling quoted fields with newlines, commas, etc.
+ */
+function parseCSVContent(csvText: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < csvText.length; i++) {
+    const char = csvText[i];
+    const nextChar = csvText[i + 1];
+    
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        // Escaped quote
+        currentCell += '"';
+        i++; // Skip next quote
+      } else {
+        // Toggle quote mode
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      // End of cell
+      currentRow.push(currentCell.trim());
+      currentCell = '';
+    } else if ((char === '\n' || (char === '\r' && nextChar === '\n')) && !inQuotes) {
+      // End of row
+      currentRow.push(currentCell.trim());
+      rows.push(currentRow);
+      currentRow = [];
+      currentCell = '';
+      if (char === '\r') i++; // Skip \n in \r\n
+    } else if (char === '\r' && !inQuotes) {
+      // End of row (just \r)
+      currentRow.push(currentCell.trim());
+      rows.push(currentRow);
+      currentRow = [];
+      currentCell = '';
+    } else {
+      currentCell += char;
+    }
+  }
+  
+  // Don't forget the last cell and row
+  if (currentCell || currentRow.length > 0) {
+    currentRow.push(currentCell.trim());
+    rows.push(currentRow);
+  }
+  
+  return rows;
+}
+
+/**
  * Parses the Provider Compliance Dashboard CSV format
  * where providers are columns and attributes are rows
  */
 export function parseProviderCSV(csvText: string): ParsedProviderData {
-  const lines = csvText.split('\n').map(line => {
-    // Parse CSV line while handling quoted values with newlines
-    const values: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
-        values.push(current.trim());
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-    values.push(current.trim());
-    
-    return values;
-  });
+  const rows = parseCSVContent(csvText);
+  
+  if (rows.length === 0) {
+    return { providers: [], allFields: [] };
+  }
 
-  // Find the first data row (where we have "NOTES" or other actual field names)
+  // Find the header row (first row with "Column 1" or similar)
+  // and the data start row (where we have "NOTES", "Address", etc.)
+  let headerRowIndex = 0;
   let dataStartIndex = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const firstCol = lines[i][0]?.toLowerCase();
+  
+  for (let i = 0; i < rows.length; i++) {
+    const firstCol = rows[i][0]?.toLowerCase().trim();
+    if (firstCol === 'column 1' || firstCol === '') {
+      headerRowIndex = i;
+    }
     if (firstCol === 'notes' || firstCol === 'address' || firstCol === 'phone number') {
       dataStartIndex = i;
       break;
     }
   }
 
-  // Extract provider names from the header rows (before dataStartIndex)
-  const providerNames: string[] = [];
-  const maxProviders = Math.max(...lines.slice(0, dataStartIndex).map(row => row.length));
-  
-  for (let colIndex = 1; colIndex < maxProviders; colIndex++) {
-    let providerName = '';
-    
-    // Combine multi-line provider names from header rows
-    for (let rowIndex = 0; rowIndex < dataStartIndex; rowIndex++) {
-      const value = lines[rowIndex][colIndex];
-      if (value && value.trim() && !value.includes('TERM>')) {
-        providerName += (providerName ? ' ' : '') + value.trim();
+  // If we didn't find a data start, look for the first row with actual field names
+  if (dataStartIndex === 0) {
+    for (let i = 1; i < rows.length; i++) {
+      const firstCol = rows[i][0]?.trim();
+      if (firstCol && firstCol.length > 0 && !firstCol.toLowerCase().includes('column')) {
+        dataStartIndex = i;
+        break;
       }
     }
-    
-    // Clean up provider name
-    providerName = providerName
-      .replace(/\s+/g, ' ')
-      .replace(/\n/g, ' ')
-      .trim();
-    
-    // Only add if we have a valid name and it's not in the "TERM>" section
-    if (providerName && !providerName.toLowerCase().includes('term')) {
-      providerNames.push(providerName);
+  }
+
+  // Extract provider names from the header row
+  const headerRow = rows[headerRowIndex];
+  const providerNames: string[] = [];
+  const termIndex = headerRow.findIndex(cell => cell.includes('TERM>'));
+  const maxCol = termIndex > 0 ? termIndex : headerRow.length;
+  
+  for (let colIndex = 1; colIndex < maxCol; colIndex++) {
+    let name = headerRow[colIndex];
+    if (name) {
+      // Clean up the name - remove newlines and extra spaces
+      name = name.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+      
+      // Skip if it looks like a termed provider or empty
+      if (name && !name.toLowerCase().includes('term') && !name.includes('TERM>')) {
+        providerNames.push(name);
+      }
     }
   }
 
@@ -72,14 +117,21 @@ export function parseProviderCSV(csvText: string): ParsedProviderData {
   for (let colIndex = 0; colIndex < providerNames.length; colIndex++) {
     const providerData: Record<string, string> = {};
     
-    for (let rowIndex = dataStartIndex; rowIndex < lines.length; rowIndex++) {
-      const row = lines[rowIndex];
-      const fieldName = row[0]?.trim();
+    for (let rowIndex = dataStartIndex; rowIndex < rows.length; rowIndex++) {
+      const row = rows[rowIndex];
+      let fieldName = row[0]?.trim();
       const fieldValue = row[colIndex + 1]?.trim();
       
+      // Skip empty field names or rows
+      if (!fieldName || fieldName === '') continue;
+      
+      // Clean up field name
+      fieldName = fieldName.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+      
       if (fieldName && fieldValue) {
-        // Store the field
-        providerData[fieldName] = fieldValue;
+        // Clean up field value
+        const cleanValue = fieldValue.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+        providerData[fieldName] = cleanValue;
         allFields.add(fieldName);
       }
     }
@@ -92,6 +144,8 @@ export function parseProviderCSV(csvText: string): ParsedProviderData {
       });
     }
   }
+
+  console.log(`Parsed ${providers.length} providers with ${allFields.size} unique fields`);
 
   return {
     providers,
@@ -113,4 +167,3 @@ export async function parseCSVFile(file: File): Promise<ParsedProviderData> {
 export function generateProviderJSON(provider: ProviderData): string {
   return JSON.stringify(provider, null, 2);
 }
-
