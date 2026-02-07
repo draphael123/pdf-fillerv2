@@ -5,6 +5,7 @@ import { PDFUploader } from './components/PDFUploader';
 import { FieldMapper } from './components/FieldMapper';
 import { DarkModeToggle } from './components/DarkModeToggle';
 import { HowToUse } from './components/HowToUse';
+import { Benefits } from './components/Benefits';
 import { parseCSVFile } from './utils/csvParser';
 import { loadProviderData, saveProviderDataWithTimestamp } from './utils/storage';
 import { extractPDFFields, generateFieldMappings, fillPDF, downloadPDF } from './utils/pdfUtils';
@@ -175,6 +176,9 @@ function App() {
 
         {/* How to Use Section */}
         <HowToUse />
+
+        {/* Benefits Section */}
+        <Benefits />
 
         {/* Data Manager - Always visible as the source */}
         <DataManager
